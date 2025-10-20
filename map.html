@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Carte cadastrale — Recherche + Géolocalisation</title>
+<title>Carte cadastrale — Recherche + Copie fiable</title>
 
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -22,157 +22,137 @@ html,body{height:100%;margin:0;background:#000;}
 
 /* Barre de recherche */
 .search-box {
-  position:absolute;
-  top:10px; left:10px;
-  z-index:1200;
-  display:flex; align-items:center;
-  background:#fff;
-  border-radius:999px;
+  position:absolute; top:10px; left:10px;
+  z-index:1200; display:flex; align-items:center;
+  background:#fff; border-radius:999px;
   box-shadow:0 2px 8px rgba(0,0,0,.25);
-  padding:6px 10px;
-  width:42px;
-  overflow:hidden;
+  padding:6px 10px; width:42px; overflow:hidden;
   transition:width .3s ease;
 }
-.search-box.open,
-.search-box:hover { width:min(80vw,340px); }
+.search-box.open, .search-box:hover { width:min(80vw,340px); }
 .search-icon { flex:0 0 auto; cursor:pointer; font-size:18px; }
 .search-input {
-  flex:1 1 auto;
-  border:none; outline:none;
-  background:transparent;
-  font:14px system-ui;
+  flex:1 1 auto; border:none; outline:none;
+  background:transparent; font:14px system-ui;
   margin-left:6px;
 }
 .locate-btn {
-  flex:0 0 auto;
-  font-size:18px;
-  cursor:pointer;
-  margin-left:6px;
-  color:#4285f4;
+  flex:0 0 auto; font-size:18px; cursor:pointer;
+  margin-left:6px; color:#4285f4;
 }
 
 /* Suggestions style Google Maps */
 .suggestions {
-  position:absolute;
-  top:50px; left:10px;
-  width:min(80vw,340px);
-  background:#fff;
-  border-radius:12px;
-  box-shadow:0 4px 14px rgba(0,0,0,.25);
-  z-index:1300;
-  overflow:hidden;
+  position:absolute; top:50px; left:10px;
+  width:min(80vw,340px); background:#fff;
+  border-radius:12px; box-shadow:0 4px 14px rgba(0,0,0,.25);
+  z-index:1300; overflow:hidden;
 }
-.suggestion {
-  display:flex;
-  align-items:flex-start;
-  gap:10px;
-  padding:10px 14px;
-  border-bottom:1px solid #f2f2f2;
-  cursor:pointer;
-  transition:background .2s;
+.suggestion { display:flex; align-items:flex-start; gap:10px;
+  padding:10px 14px; border-bottom:1px solid #f2f2f2;
+  cursor:pointer; transition:background .2s;
 }
 .suggestion:last-child { border-bottom:none; }
 .suggestion:hover { background:#f5f5f5; }
-.suggestion-icon {
-  font-size:18px;
-  margin-top:3px;
-  color:#4285f4;
-}
+.suggestion-icon { font-size:18px; margin-top:3px; color:#4285f4; }
 .suggestion-text { display:flex; flex-direction:column; }
 .suggestion-title { font-weight:500; color:#202124; font-size:14px; line-height:1.2; }
 .suggestion-desc { color:#5f6368; font-size:12px; margin-top:2px; }
 
-/* Toast */
+/* Toast générique */
 .toast {
-  position:fixed;
-  left:50%;
-  bottom:16px;
+  position:fixed; left:50%; bottom:16px;
   transform:translateX(-50%);
-  background:#111;
-  color:#fff;
-  padding:6px 10px;
-  border-radius:8px;
+  background:#111; color:#fff;
+  padding:6px 10px; border-radius:8px;
   font:12px system-ui;
-  opacity:0;
-  transition:opacity .2s;
+  opacity:0; transition:opacity .25s ease;
   z-index:1500;
 }
 .toast.show {opacity:1;}
 
+/* ✅ Toast copie */
+.copy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(8px);
+  background: #111;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font: 13px system-ui, Arial;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+.copy-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.copy-toast .ok {
+  display:inline-block; margin-right:8px;
+  background:#2e7d32; color:#fff;
+  width:20px;height:20px;border-radius:50%;
+  text-align:center;line-height:20px;font-size:12px;
+}
+
 /* Toolbar droite */
 .toolbar {
-  position:fixed;
-  right:10px; top:10px;
-  display:flex; gap:10px;
-  z-index:1600;
+  position:fixed; right:10px; top:10px;
+  display:flex; gap:10px; z-index:1600;
 }
 .btn {
-  background:#fff;
-  border:1px solid #ddd;
-  border-radius:10px;
-  box-shadow:0 2px 6px rgba(0,0,0,.15);
-  font:13px system-ui;
-  padding:8px 10px;
-  cursor:pointer;
+  background:#fff; border:1px solid #ddd;
+  border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,.15);
+  font:13px system-ui; padding:8px 10px; cursor:pointer;
 }
 
 /* Divers */
 .zoom-indicator {
-  background:rgba(0,0,0,.6);
-  color:#fff;
-  padding:4px 8px;
-  border-radius:8px;
-  font:13px system-ui;
-  margin:8px;
+  background:rgba(0,0,0,.6); color:#fff;
+  padding:4px 8px; border-radius:8px;
+  font:13px system-ui; margin:8px;
 }
 .area-label {
-  background:rgba(0,0,0,.45);
-  color:#fff;
-  padding:4px 8px;
-  border-radius:8px;
-  font:14px system-ui;
-  white-space:nowrap;
+  background:rgba(0,0,0,0.45);
+  color:#fff; padding:4px 8px;
+  border-radius:8px; font:14px system-ui;
+  white-space:nowrap; cursor:pointer;
+  transition:background .3s;
 }
-.fade-marker { animation: fadeIn .6s ease-out; }
-@keyframes fadeIn { from {opacity:0; transform:scale(0.7);} to {opacity:1; transform:scale(1);} }
-.leaflet-frozen {filter:grayscale(0.2) brightness(0.95);transition:filter .3s;cursor:zoom-in;}
+.area-label:hover { background:rgba(0,150,0,0.5); }
+
+.leaflet-frozen {filter:grayscale(0.2) brightness(0.95);transition:filter .3s;}
 .leaflet-control-zoom {margin-top:80px!important;}
 
 /* Loader circulaire */
 .loader-overlay {
-  position:fixed;
-  inset:0;
+  position:fixed; inset:0;
   background:rgba(0,0,0,0.5);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  z-index:2000;
-  backdrop-filter:blur(2px);
-  opacity:0;
-  pointer-events:none;
-  transition:opacity .3s;
+  display:flex; align-items:center; justify-content:center;
+  z-index:2000; backdrop-filter:blur(2px);
+  opacity:0; pointer-events:none; transition:opacity .3s;
 }
-.loader-overlay.show {
-  opacity:1;
-  pointer-events:all;
-}
+.loader-overlay.show { opacity:1; pointer-events:all; }
 .loader {
   border:5px solid rgba(255,255,255,0.3);
-  border-top:5px solid #fff;
-  border-radius:50%;
-  width:50px;
-  height:50px;
-  animation:spin 1s linear infinite;
+  border-top:5px solid #fff; border-radius:50%;
+  width:50px; height:50px; animation:spin 1s linear infinite;
 }
-@keyframes spin { 100% { transform:rotate(360deg);} }
+@keyframes spin {100%{transform:rotate(360deg);}}
 </style>
 </head>
+
 <body>
 <div id="map"></div>
 <div class="toast" id="note"></div>
 
-<!-- Loader circulaire -->
+<!-- ✅ Toast de copie -->
+<div class="copy-toast" id="copyToast">
+  <span class="ok">✓</span><span id="copyToastText">m² copiés</span>
+</div>
+
+<!-- Loader -->
 <div class="loader-overlay" id="loaderOverlay">
   <div class="loader"></div>
 </div>
@@ -201,51 +181,73 @@ const cadRaster=L.tileLayer(URL_PARCELLAIRE,{maxZoom:22,maxNativeZoom:19,opacity
 const MAX_NET_ZOOM=19;
 const map=L.map('map',{layers:[ignOrthos,cadRaster],maxZoom:MAX_NET_ZOOM,minZoom:2}).setView([48.7064,2.0382],18);
 
-/* ---------- Toast ---------- */
+/* ---------- Toast générique ---------- */
 function toast(msg){
   const t=document.getElementById('note');
-  t.textContent=msg;t.classList.add('show');
+  t.textContent=msg;
+  t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),1200);
 }
 
-/* ---------- Recherche Photon ---------- */
+/* ---------- Toast copie ---------- */
+function showCopyToast(message='m² copiés') {
+  const t=document.getElementById('copyToast');
+  const txt=document.getElementById('copyToastText');
+  if(txt) txt.textContent = message;
+  t.classList.add('show');
+  clearTimeout(t._hideTimeout);
+  t._hideTimeout=setTimeout(()=>t.classList.remove('show'),1400);
+}
+
+/* ---------- Copie robuste ---------- */
+function copyToClipboard(text){
+  const payload = (typeof text==='string') ? text : String(text);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(payload)
+      .then(()=> showCopyToast('✔️ ' + payload + ' copiés'))
+      .catch(()=> fallbackCopy(payload));
+  } else fallbackCopy(payload);
+
+  function fallbackCopy(str){
+    try {
+      const ta=document.createElement('textarea');
+      ta.value=str; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showCopyToast('✔️ ' + str + ' copiés');
+    } catch(e){ showCopyToast('Échec copie'); }
+  }
+}
+
+/* ---------- Recherche Photon + géoloc ---------- */
 const searchBox=document.getElementById('searchBox');
 const searchIcon=document.getElementById('searchIcon');
 const searchInput=document.getElementById('searchInput');
 const locateBtn=document.getElementById('locateBtn');
 const suggestions=document.getElementById('suggestions');
 let currentMarker=null;
-
-// Icône bleue style Google Maps
-const blueIcon = L.icon({
+const blueIcon=L.icon({
   iconUrl:'https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2_hdpi.png',
-  iconSize:[27,43],
-  iconAnchor:[13,41]
+  iconSize:[27,43], iconAnchor:[13,41]
 });
-
-function placeMarker(lat, lng) {
-  if(currentMarker){ map.removeLayer(currentMarker); }
+function placeMarker(lat,lng){
+  if(currentMarker) map.removeLayer(currentMarker);
   currentMarker=L.marker([lat,lng],{icon:blueIcon}).addTo(map);
   currentMarker._icon.classList.add('fade-marker');
-  currentMarker.on('click',()=>{ map.removeLayer(currentMarker); currentMarker=null; });
+  currentMarker.on('click',()=>{map.removeLayer(currentMarker);currentMarker=null;});
 }
-
 function geocodeAndCenter(q){
   fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&lang=fr`)
-  .then(r=>r.json())
-  .then(data=>{
+  .then(r=>r.json()).then(data=>{
     if(data.features.length){
-      const f=data.features[0];
-      const lat=f.geometry.coordinates[1],lng=f.geometry.coordinates[0];
-      map.setView([lat,lng],18);
-      placeMarker(lat,lng);
+      const f=data.features[0]; const lat=f.geometry.coordinates[1],lng=f.geometry.coordinates[0];
+      map.setView([lat,lng],18); placeMarker(lat,lng);
     } else toast('Aucune adresse trouvée');
   });
 }
-
 searchIcon.addEventListener('click',()=>searchBox.classList.toggle('open'));
 searchInput.addEventListener('focus',()=>searchBox.classList.add('open'));
-
 let searchTimeout=null;
 searchInput.addEventListener('input',()=>{
   clearTimeout(searchTimeout);
@@ -253,8 +255,7 @@ searchInput.addEventListener('input',()=>{
   if(!q){suggestions.style.display='none';return;}
   searchTimeout=setTimeout(()=>{
     fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=fr`)
-    .then(r=>r.json())
-    .then(data=>{
+    .then(r=>r.json()).then(data=>{
       suggestions.innerHTML='';
       if(!data.features.length){suggestions.style.display='none';return;}
       data.features.forEach(f=>{
@@ -263,16 +264,14 @@ searchInput.addEventListener('input',()=>{
         const desc=[p.postcode,p.city,p.country].filter(Boolean).join(', ');
         const div=document.createElement('div');
         div.className='suggestion';
-        div.innerHTML=`
-          <div class="suggestion-icon">📍</div>
-          <div class="suggestion-text">
-            <div class="suggestion-title">${title}</div>
-            <div class="suggestion-desc">${desc}</div>
-          </div>`;
+        div.innerHTML=`<div class="suggestion-icon">📍</div>
+                       <div class="suggestion-text">
+                         <div class="suggestion-title">${title}</div>
+                         <div class="suggestion-desc">${desc}</div>
+                       </div>`;
         div.addEventListener('click',()=>{
           const lat=f.geometry.coordinates[1],lng=f.geometry.coordinates[0];
-          map.setView([lat,lng],18);
-          placeMarker(lat,lng);
+          map.setView([lat,lng],18); placeMarker(lat,lng);
           searchInput.value=`${title}, ${desc}`;
           suggestions.style.display='none';
         });
@@ -282,62 +281,62 @@ searchInput.addEventListener('input',()=>{
     });
   },300);
 });
-
 searchInput.addEventListener('keydown',e=>{
-  if(e.key==='Enter'){
-    e.preventDefault();
+  if(e.key==='Enter'){ e.preventDefault();
     const q=searchInput.value.trim();
     if(q) geocodeAndCenter(q);
   }
 });
 map.on('click',()=>suggestions.style.display='none');
-
-/* ---------- Géolocalisation améliorée ---------- */
 locateBtn.addEventListener('click',()=>{
   const q=searchInput.value.trim();
-  if(q){ // adresse saisie → géocode
-    geocodeAndCenter(q);
-  } else { // pas d’adresse → géolocalisation GPS
-    if(!navigator.geolocation){toast('🌍 Géolocalisation non supportée');return;}
+  if(q){ geocodeAndCenter(q); }
+  else if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(pos=>{
       const lat=pos.coords.latitude,lng=pos.coords.longitude;
-      map.setView([lat,lng],18);
-      placeMarker(lat,lng);
-      toast('📍 Vous êtes ici');
+      map.setView([lat,lng],18); placeMarker(lat,lng); toast('📍 Vous êtes ici');
     },()=>toast('⚠️ Impossible de récupérer la position'));
-  }
+  } else toast('🌍 Géolocalisation non supportée');
 });
 
-/* ---------- Dessin (sans cercle) ---------- */
+/* ---------- Dessin ---------- */
 const drawnItems=new L.FeatureGroup().addTo(map);
 map.addControl(new L.Control.Draw({
   position:'topleft',
-  draw:{
-    polygon:{allowIntersection:false,shapeOptions:{color:'#1E88E5',weight:2,fillOpacity:.25}},
-    polyline:false,rectangle:false,circle:false,circlemarker:false,marker:false
-  },
+  draw:{polygon:{shapeOptions:{color:'#1E88E5',weight:2,fillOpacity:.25}},
+        polyline:false,rectangle:false,circle:false,circlemarker:false,marker:false},
   edit:{featureGroup:drawnItems,edit:true,remove:true}
 }));
-
-/* ---------- Calcul surface ---------- */
 let poly=null,label=null;
-function toGJ(l){const r=l.getLatLngs()[0].map(p=>[p.lng,p.lat]);const f=r[0],la=r[r.length-1];if(f[0]!==la[0]||f[1]!==la[1])r.push(f);return{type:"Feature",geometry:{type:"Polygon",coordinates:[r]}};}
+function toGJ(l){const r=l.getLatLngs()[0].map(p=>[p.lng,p.lat]);r.push(r[0]);
+  return{type:"Feature",geometry:{type:"Polygon",coordinates:[r]}};}
 function updateLabel(){
   if(!poly)return;
   const gj=toGJ(poly),a=turf.area(gj);
+  const val=Math.round(a);
   const c=turf.centerOfMass(gj).geometry.coordinates,latlng=[c[1],c[0]];
-  const html=`<div class="area-label" contenteditable="true">${a.toFixed(2)} m²</div>`;
-  if(!label){label=L.marker(latlng,{icon:L.divIcon({className:'',html,iconSize:null})}).addTo(map);}
-  else {label.setLatLng(latlng);label.setIcon(L.divIcon({className:'',html,iconSize:null}));}
+  const html=`<div class="area-label" title="Cliquer pour copier">${val} m²</div>`;
+  if(!label){
+    label=L.marker(latlng,{icon:L.divIcon({className:'',html,iconSize:null})}).addTo(map);
+    label.on('click',()=>copyToClipboard(`${val} m²`));
+    label.on('touchend',()=>copyToClipboard(`${val} m²`));
+  }else{
+    label.setLatLng(latlng);
+    label.setIcon(L.divIcon({className:'',html,iconSize:null}));
+    label.off('click'); label.off('touchend');
+    label.on('click',()=>copyToClipboard(`${val} m²`));
+    label.on('touchend',()=>copyToClipboard(`${val} m²`));
+  }
 }
-map.on(L.Draw.Event.CREATED,e=>{drawnItems.clearLayers();if(label){map.removeLayer(label);label=null;}poly=e.layer;drawnItems.addLayer(poly);poly.on('edit',updateLabel);updateLabel();});
+map.on(L.Draw.Event.CREATED,e=>{drawnItems.clearLayers();
+  if(label){map.removeLayer(label);label=null;}
+  poly=e.layer; drawnItems.addLayer(poly); poly.on('edit',updateLabel); updateLabel();});
 map.on('draw:edited',()=>poly&&updateLabel());
 map.on('draw:deleted',()=>{poly=null;if(label){map.removeLayer(label);label=null;}});
 
 /* ---------- Mode Freeze + Loader ---------- */
 let frozen=false,frozenOverlay=null,savedLayers=[],savedZoomMax=null;
 const loader=document.getElementById('loaderOverlay');
-
 async function freezeView(){
   if(frozen)return;
   loader.classList.add('show');
@@ -348,7 +347,7 @@ async function freezeView(){
     const bounds=map.getBounds();
     savedLayers=[];map.eachLayer(l=>savedLayers.push(l));
     savedLayers.forEach(l=>{if(l!==drawnItems)map.removeLayer(l);});
-    frozenOverlay=L.imageOverlay(dataURL,bounds,{zIndex:400}).addTo(map);
+    frozenOverlay=L.imageOverlay(dataURL,bounds,{zIndex:0}).addTo(map);
     savedZoomMax=map.options.maxZoom;map.setMaxZoom(22);
     frozen=true;
     document.getElementById('btnFreeze').hidden=true;
@@ -357,7 +356,6 @@ async function freezeView(){
   }catch(e){console.error(e);toast('❌ Erreur de capture');}
   loader.classList.remove('show');
 }
-
 function unfreezeView(){
   if(!frozen)return;
   document.body.classList.remove('leaflet-frozen');
