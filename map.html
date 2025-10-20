@@ -1,216 +1,361 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8" />
-<title>IGN Cadastre — Freeze & Zoom Mode</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta charset="utf-8">
+<title>Carte cadastrale — Recherche + Géolocalisation</title>
 
+<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- Leaflet Draw -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
+<!-- Divers -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-<script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"></script>
-
-<!-- Map to canvas (tiles + vectors) -->
 <script src="https://unpkg.com/leaflet-image/leaflet-image.js"></script>
 
+<style>
+html,body{height:100%;margin:0;background:#000;}
+#map{position:fixed;inset:0;}
+
+/* Barre de recherche */
+.search-box {
+  position:absolute;
+  top:10px; left:10px;
+  z-index:1200;
+  display:flex; align-items:center;
+  background:#fff;
+  border-radius:999px;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+  padding:6px 10px;
+  width:42px;
+  overflow:hidden;
+  transition:width .3s ease;
+}
+.search-box.open,
+.search-box:hover { width:min(80vw,340px); }
+.search-icon { flex:0 0 auto; cursor:pointer; font-size:18px; }
+.search-input {
+  flex:1 1 auto;
+  border:none; outline:none;
+  background:transparent;
+  font:14px system-ui;
+  margin-left:6px;
+}
+.locate-btn {
+  flex:0 0 auto;
+  font-size:18px;
+  cursor:pointer;
+  margin-left:6px;
+  color:#4285f4;
+}
+
+/* Suggestions style Google Maps */
+.suggestions {
+  position:absolute;
+  top:50px; left:10px;
+  width:min(80vw,340px);
+  background:#fff;
+  border-radius:12px;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);
+  z-index:1300;
+  overflow:hidden;
+}
+.suggestion {
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  padding:10px 14px;
+  border-bottom:1px solid #f2f2f2;
+  cursor:pointer;
+  transition:background .2s;
+}
+.suggestion:last-child { border-bottom:none; }
+.suggestion:hover { background:#f5f5f5; }
+.suggestion-icon {
+  font-size:18px;
+  margin-top:3px;
+  color:#4285f4;
+}
+.suggestion-text { display:flex; flex-direction:column; }
+.suggestion-title { font-weight:500; color:#202124; font-size:14px; line-height:1.2; }
+.suggestion-desc { color:#5f6368; font-size:12px; margin-top:2px; }
+
+/* Toast */
+.toast {
+  position:fixed;
+  left:50%;
+  bottom:16px;
+  transform:translateX(-50%);
+  background:#111;
+  color:#fff;
+  padding:6px 10px;
+  border-radius:8px;
+  font:12px system-ui;
+  opacity:0;
+  transition:opacity .2s;
+  z-index:1500;
+}
+.toast.show {opacity:1;}
+
+/* Toolbar droite */
+.toolbar {
+  position:fixed;
+  right:10px; top:10px;
+  display:flex; gap:10px;
+  z-index:1600;
+}
+.btn {
+  background:#fff;
+  border:1px solid #ddd;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  font:13px system-ui;
+  padding:8px 10px;
+  cursor:pointer;
+}
+
+/* Divers */
+.zoom-indicator {
+  background:rgba(0,0,0,.6);
+  color:#fff;
+  padding:4px 8px;
+  border-radius:8px;
+  font:13px system-ui;
+  margin:8px;
+}
+.area-label {
+  background:rgba(0,0,0,.45);
+  color:#fff;
+  padding:4px 8px;
+  border-radius:8px;
+  font:14px system-ui;
+  white-space:nowrap;
+}
+.fade-marker { animation: fadeIn .6s ease-out; }
+@keyframes fadeIn { from {opacity:0; transform:scale(0.7);} to {opacity:1; transform:scale(1);} }
+.leaflet-frozen {filter:grayscale(0.2) brightness(0.95);transition:filter .3s;cursor:zoom-in;}
+.leaflet-control-zoom {margin-top:80px!important;}
+
+/* Loader circulaire */
+.loader-overlay {
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.5);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:2000;
+  backdrop-filter:blur(2px);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .3s;
+}
+.loader-overlay.show {
+  opacity:1;
+  pointer-events:all;
+}
+.loader {
+  border:5px solid rgba(255,255,255,0.3);
+  border-top:5px solid #fff;
+  border-radius:50%;
+  width:50px;
+  height:50px;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin { 100% { transform:rotate(360deg);} }
+</style>
+</head>
+<body>
 <div id="map"></div>
 <div class="toast" id="note"></div>
 
-<!-- Top-right buttons -->
-<div class="toolbar">
-  <button class="btn" id="btnFreeze" title="Freeze & Zoom">📷 Freeze</button>
-  <button class="btn" id="btnUnfreeze" title="Back to live" hidden>↩️ Unfreeze</button>
-  <button class="btn" id="btnRaster" title="Toggle cadastre raster">Raster on/off</button>
+<!-- Loader circulaire -->
+<div class="loader-overlay" id="loaderOverlay">
+  <div class="loader"></div>
 </div>
 
-<style>
-html,body{height:100%;margin:0;background:#000}
-#map{position:fixed;inset:0}
-.area-label{background:rgba(0,0,0,.45);color:#fff;padding:4px 8px;border-radius:8px;font:14px system-ui;white-space:nowrap}
-.toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#111;color:#fff;
-       padding:6px 10px;border-radius:8px;font:12px system-ui;opacity:0;transition:opacity .2s;z-index:1500;max-width:92vw}
-.toast.show{opacity:1}
+<!-- Barre de recherche -->
+<div class="search-box" id="searchBox">
+  <div class="search-icon" id="searchIcon">🔍</div>
+  <input class="search-input" id="searchInput" type="text" placeholder="Rechercher une adresse...">
+  <div class="locate-btn" id="locateBtn">📍</div>
+</div>
+<div class="suggestions" id="suggestions" style="display:none;"></div>
 
-.toolbar{position:fixed;right:10px;top:10px;display:flex;gap:10px;z-index:1600}
-.btn{background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.15);
-     font:13px system-ui;padding:8px 10px;cursor:pointer}
-.btn[hidden]{display:none}
-
-/* === Mode "freeze" (photo) : maintenir les vecteurs visibles === */
-body.leaflet-frozen .leaflet-overlay-pane { z-index: 400 !important; }
-body.leaflet-frozen .leaflet-marker-pane,
-body.leaflet-frozen .leaflet-overlay-pane svg,
-body.leaflet-frozen .leaflet-draw-pane { z-index: 700 !important; }
-
-/* Effet visuel lors du mode figé */
-.leaflet-frozen {
-  filter: grayscale(0.2) brightness(0.95);
-  transition: filter 0.3s ease;
-  cursor: zoom-in;
-}
-</style>
+<!-- Toolbar -->
+<div class="toolbar">
+  <button class="btn" id="btnFreeze">📷 Freeze</button>
+  <button class="btn" id="btnUnfreeze" hidden>↩️ Unfreeze</button>
+  <button class="btn" id="btnRaster">Raster on/off</button>
+</div>
 
 <script>
-/* ---------- Base layers (IGN, keyless) ---------- */
-const URL_ORTHO =
-  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
-  '&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/jpeg' +
-  '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+/* ---------- Fonds IGN ---------- */
+const URL_ORTHO='https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/jpeg&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+const URL_PARCELLAIRE='https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+const ignOrthos=L.tileLayer(URL_ORTHO,{maxZoom:22,maxNativeZoom:19,attribution:'© IGN'});
+const cadRaster=L.tileLayer(URL_PARCELLAIRE,{maxZoom:22,maxNativeZoom:19,opacity:.85,zIndex:600,attribution:'© IGN'});
+const MAX_NET_ZOOM=19;
+const map=L.map('map',{layers:[ignOrthos,cadRaster],maxZoom:MAX_NET_ZOOM,minZoom:2}).setView([48.7064,2.0382],18);
 
-const URL_PARCELLAIRE =
-  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
-  '&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png' +
-  '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
+/* ---------- Toast ---------- */
+function toast(msg){
+  const t=document.getElementById('note');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1200);
+}
 
-const ignOrthos = L.tileLayer(URL_ORTHO, {
-  maxZoom:22,maxNativeZoom:21,attribution:'Géoplateforme / © IGN', crossOrigin:''
+/* ---------- Recherche Photon ---------- */
+const searchBox=document.getElementById('searchBox');
+const searchIcon=document.getElementById('searchIcon');
+const searchInput=document.getElementById('searchInput');
+const locateBtn=document.getElementById('locateBtn');
+const suggestions=document.getElementById('suggestions');
+let currentMarker=null;
+
+// Icône bleue style Google Maps
+const blueIcon = L.icon({
+  iconUrl:'https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2_hdpi.png',
+  iconSize:[27,43],
+  iconAnchor:[13,41]
 });
-const cadRaster = L.tileLayer(URL_PARCELLAIRE, {
-  maxZoom:22,maxNativeZoom:21,opacity:.85,zIndex:600,attribution:'Géoplateforme / © IGN', crossOrigin:''
-});
 
-/* ---------- Map ---------- */
-const map = L.map('map',{
-  layers:[ignOrthos,cadRaster],
-  maxZoom:22, minZoom:2,
-  zoomSnap:1, zoomDelta:1,
-  touchZoom:'center', bounceAtZoomLimits:false
-}).setView([48.7064, 2.0382], 19); // Chevreuse
-
-/* ---------- Draw + dynamic m² label ---------- */
-const drawnItems = new L.FeatureGroup().addTo(map);
-map.addControl(new L.Control.Draw({
-  position:'topleft',
-  draw:{ polygon:{ allowIntersection:false, showArea:false,
-                   shapeOptions:{ color:'#1E88E5', weight:2, fillOpacity:.25 } },
-         polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false },
-  edit:{ featureGroup: drawnItems, edit:true, remove:true }
-}));
-
-let poly=null,label=null;
-const fmt=n=>!isFinite(n)?'–':(n>=100?Math.round(n).toLocaleString():n.toLocaleString(undefined,{maximumFractionDigits:2}));
-const toGJ=l=>{const r=l.getLatLngs()[0].map(p=>[p.lng,p.lat]);const f=r[0],la=r[r.length-1];if(f[0]!==la[0]||f[1]!==la[1])r.push(f);return{type:"Feature",geometry:{type:"Polygon",coordinates:[r]}}};
-function toast(msg){const t=document.getElementById('note');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1200);}
-function updateLabel(){
-  if(!poly)return;
-  const gj=toGJ(poly), a=turf.area(gj);
-  const c=turf.centerOfMass(gj).geometry.coordinates, latlng=[c[1],c[0]];
-  const html=`<div class="area-label" title="tap to copy">${fmt(a)} m²</div>`;
-  if(!label){
-    label=L.marker(latlng,{icon:L.divIcon({className:'',html,iconSize:null})}).addTo(map);
-    const copy=()=>navigator.clipboard && navigator.clipboard.writeText(`${Math.round(a)} m²`).then(()=>toast('Copied m²'));
-    label.on('click',copy); label.on('tap',copy);
-  } else { label.setLatLng(latlng); label.setIcon(L.divIcon({className:'',html,iconSize:null})); }
+function placeMarker(lat, lng) {
+  if(currentMarker){ map.removeLayer(currentMarker); }
+  currentMarker=L.marker([lat,lng],{icon:blueIcon}).addTo(map);
+  currentMarker._icon.classList.add('fade-marker');
+  currentMarker.on('click',()=>{ map.removeLayer(currentMarker); currentMarker=null; });
 }
-map.on(L.Draw.Event.CREATED,e=>{drawnItems.clearLayers(); if(label){map.removeLayer(label);label=null;} poly=e.layer; drawnItems.addLayer(poly); poly.on('edit',updateLabel); updateLabel();});
-map.on('draw:edited',()=>poly&&updateLabel());
-map.on('draw:deleted',()=>{poly=null; if(label){map.removeLayer(label);label=null;}});
 
-/* ---------- Cadastre dynamique multi-communes ---------- */
-map.createPane('cadVectorPane');
-map.getPane('cadVectorPane').style.zIndex = 650;
-
-function strokeW(z){return Math.max(1,0.5+(z-18)*0.5);}
-let cadVecGroup=L.layerGroup().addTo(map);
-let loadedCommunes=new Set();
-const URL_COMMUNES='https://etalab-datasets.geo.data.gouv.fr/contours-administratifs/communes-2023.geojson';
-let communesIndex=null;
-
-async function loadCommunesIndex(){
-  if(communesIndex)return communesIndex;
-  const res=await fetch(URL_COMMUNES);
-  const geo=await res.json();
-  communesIndex=geo;
-  return geo;
-}
-function buildVectorGroup(geojson){
-  const w=strokeW(map.getZoom());
-  const halo=L.geoJSON(geojson,{pane:'cadVectorPane',style:{color:'#fff',weight:w+2,opacity:0.9,fill:false}});
-  const stroke=L.geoJSON(geojson,{pane:'cadVectorPane',style:{color:'#ff6a00',weight:w,opacity:1.0,fill:false}});
-  const g=L.layerGroup([halo,stroke]);
-  g._halo=halo;g._stroke=stroke;
-  return g;
-}
-function restyleCad(){
-  const w=strokeW(map.getZoom());
-  cadVecGroup.eachLayer(layer=>{
-    if(layer._halo)layer._halo.setStyle({weight:w+2});
-    if(layer._stroke)layer._stroke.setStyle({weight:w});
+function geocodeAndCenter(q){
+  fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&lang=fr`)
+  .then(r=>r.json())
+  .then(data=>{
+    if(data.features.length){
+      const f=data.features[0];
+      const lat=f.geometry.coordinates[1],lng=f.geometry.coordinates[0];
+      map.setView([lat,lng],18);
+      placeMarker(lat,lng);
+    } else toast('Aucune adresse trouvée');
   });
 }
-map.on('zoomend',restyleCad);
 
-async function loadCadastreForCommune(dep,insee){
-  if(loadedCommunes.has(insee))return;
-  const base=`https://cadastre.data.gouv.fr/data/etalab-cadastre/latest/geojson/communes/${dep}/${insee}`;
-  const url=`${base}/cadastre-${insee}-parcelles.json.gz`;
-  try{
-    const res=await fetch(url,{cache:'force-cache'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const ab=await res.arrayBuffer();
-    const u8=new Uint8Array(ab);
-    const isGz=u8.length>=2&&u8[0]===0x1f&&u8[1]===0x8b;
-    const text=isGz?pako.ungzip(u8,{to:'string'}):new TextDecoder().decode(u8);
-    const geo=JSON.parse(text);
-    const group=buildVectorGroup(geo);
-    group.addTo(cadVecGroup);
-    loadedCommunes.add(insee);
-  }catch(e){console.warn(`Cadastre non disponible pour ${insee}`,e);}
-}
-async function updateCadastre(){
-  const bounds=map.getBounds();
-  const geo=await loadCommunesIndex();
-  const visibles=geo.features.filter(f=>turf.booleanIntersects(f,turf.bboxPolygon([
-    bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()
-  ])));
-  for(const f of visibles){
-    const insee=f.properties.code;
-    const dep=insee.slice(0,2).padStart(2,'0');
-    loadCadastreForCommune(dep,insee);
-  }
-}
-map.on('moveend',updateCadastre);
-updateCadastre();
+searchIcon.addEventListener('click',()=>searchBox.classList.toggle('open'));
+searchInput.addEventListener('focus',()=>searchBox.classList.add('open'));
 
-/* ---------- Raster on/off ---------- */
-document.getElementById('btnRaster').addEventListener('click',()=>{
-  if(map.hasLayer(cadRaster))map.removeLayer(cadRaster);else map.addLayer(cadRaster);
+let searchTimeout=null;
+searchInput.addEventListener('input',()=>{
+  clearTimeout(searchTimeout);
+  const q=searchInput.value.trim();
+  if(!q){suggestions.style.display='none';return;}
+  searchTimeout=setTimeout(()=>{
+    fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=fr`)
+    .then(r=>r.json())
+    .then(data=>{
+      suggestions.innerHTML='';
+      if(!data.features.length){suggestions.style.display='none';return;}
+      data.features.forEach(f=>{
+        const p=f.properties;
+        const title=(p.housenumber?p.housenumber+' ':'')+(p.street||p.name||'Adresse');
+        const desc=[p.postcode,p.city,p.country].filter(Boolean).join(', ');
+        const div=document.createElement('div');
+        div.className='suggestion';
+        div.innerHTML=`
+          <div class="suggestion-icon">📍</div>
+          <div class="suggestion-text">
+            <div class="suggestion-title">${title}</div>
+            <div class="suggestion-desc">${desc}</div>
+          </div>`;
+        div.addEventListener('click',()=>{
+          const lat=f.geometry.coordinates[1],lng=f.geometry.coordinates[0];
+          map.setView([lat,lng],18);
+          placeMarker(lat,lng);
+          searchInput.value=`${title}, ${desc}`;
+          suggestions.style.display='none';
+        });
+        suggestions.appendChild(div);
+      });
+      suggestions.style.display='block';
+    });
+  },300);
 });
 
-/* ---------- FREEZE & ZOOM MODE ---------- */
-let frozen=false;
-let frozenOverlay=null;
-let savedLayers=[];
-let savedZoomMax=null;
+searchInput.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const q=searchInput.value.trim();
+    if(q) geocodeAndCenter(q);
+  }
+});
+map.on('click',()=>suggestions.style.display='none');
+
+/* ---------- Géolocalisation améliorée ---------- */
+locateBtn.addEventListener('click',()=>{
+  const q=searchInput.value.trim();
+  if(q){ // adresse saisie → géocode
+    geocodeAndCenter(q);
+  } else { // pas d’adresse → géolocalisation GPS
+    if(!navigator.geolocation){toast('🌍 Géolocalisation non supportée');return;}
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const lat=pos.coords.latitude,lng=pos.coords.longitude;
+      map.setView([lat,lng],18);
+      placeMarker(lat,lng);
+      toast('📍 Vous êtes ici');
+    },()=>toast('⚠️ Impossible de récupérer la position'));
+  }
+});
+
+/* ---------- Dessin (sans cercle) ---------- */
+const drawnItems=new L.FeatureGroup().addTo(map);
+map.addControl(new L.Control.Draw({
+  position:'topleft',
+  draw:{
+    polygon:{allowIntersection:false,shapeOptions:{color:'#1E88E5',weight:2,fillOpacity:.25}},
+    polyline:false,rectangle:false,circle:false,circlemarker:false,marker:false
+  },
+  edit:{featureGroup:drawnItems,edit:true,remove:true}
+}));
+
+/* ---------- Calcul surface ---------- */
+let poly=null,label=null;
+function toGJ(l){const r=l.getLatLngs()[0].map(p=>[p.lng,p.lat]);const f=r[0],la=r[r.length-1];if(f[0]!==la[0]||f[1]!==la[1])r.push(f);return{type:"Feature",geometry:{type:"Polygon",coordinates:[r]}};}
+function updateLabel(){
+  if(!poly)return;
+  const gj=toGJ(poly),a=turf.area(gj);
+  const c=turf.centerOfMass(gj).geometry.coordinates,latlng=[c[1],c[0]];
+  const html=`<div class="area-label" contenteditable="true">${a.toFixed(2)} m²</div>`;
+  if(!label){label=L.marker(latlng,{icon:L.divIcon({className:'',html,iconSize:null})}).addTo(map);}
+  else {label.setLatLng(latlng);label.setIcon(L.divIcon({className:'',html,iconSize:null}));}
+}
+map.on(L.Draw.Event.CREATED,e=>{drawnItems.clearLayers();if(label){map.removeLayer(label);label=null;}poly=e.layer;drawnItems.addLayer(poly);poly.on('edit',updateLabel);updateLabel();});
+map.on('draw:edited',()=>poly&&updateLabel());
+map.on('draw:deleted',()=>{poly=null;if(label){map.removeLayer(label);label=null;}});
+
+/* ---------- Mode Freeze + Loader ---------- */
+let frozen=false,frozenOverlay=null,savedLayers=[],savedZoomMax=null;
+const loader=document.getElementById('loaderOverlay');
 
 async function freezeView(){
   if(frozen)return;
+  loader.classList.add('show');
   document.body.classList.add('leaflet-frozen');
   try{
-    const canvas=await new Promise((resolve,reject)=>{
-      leafletImage(map,(err,c)=>(err?reject(err):resolve(c)));
-    });
+    const canvas=await new Promise((resolve,reject)=>leafletImage(map,(err,c)=>err?reject(err):resolve(c)));
     const dataURL=canvas.toDataURL('image/png');
     const bounds=map.getBounds();
-    savedLayers=[];
-    map.eachLayer(l=>savedLayers.push(l));
+    savedLayers=[];map.eachLayer(l=>savedLayers.push(l));
     savedLayers.forEach(l=>{if(l!==drawnItems)map.removeLayer(l);});
     frozenOverlay=L.imageOverlay(dataURL,bounds,{zIndex:400}).addTo(map);
-    savedZoomMax=map.options.maxZoom;
-    map.setMaxZoom(savedZoomMax+5);
+    savedZoomMax=map.options.maxZoom;map.setMaxZoom(22);
     frozen=true;
     document.getElementById('btnFreeze').hidden=true;
     document.getElementById('btnUnfreeze').hidden=false;
-    toast('📸 Mode photo activé : zoomez librement');
-  }catch(e){
-    console.error(e);
-    document.body.classList.remove('leaflet-frozen');
-    toast('❌ Impossible de capturer cette vue');
-  }
+    toast('📸 Mode photo activé');
+  }catch(e){console.error(e);toast('❌ Erreur de capture');}
+  loader.classList.remove('show');
 }
 
 function unfreezeView(){
@@ -218,26 +363,21 @@ function unfreezeView(){
   document.body.classList.remove('leaflet-frozen');
   if(frozenOverlay){map.removeLayer(frozenOverlay);frozenOverlay=null;}
   if(savedLayers){savedLayers.forEach(l=>{if(!map.hasLayer(l))map.addLayer(l);});}
-  map.setMaxZoom(savedZoomMax);
+  map.setMaxZoom(MAX_NET_ZOOM);
   frozen=false;
   document.getElementById('btnFreeze').hidden=false;
   document.getElementById('btnUnfreeze').hidden=true;
-  toast('↩️ Retour à la carte en direct');
+  toast('↩️ Retour à la carte');
 }
-
 document.getElementById('btnFreeze').addEventListener('click',freezeView);
 document.getElementById('btnUnfreeze').addEventListener('click',unfreezeView);
+document.getElementById('btnRaster').addEventListener('click',()=>map.hasLayer(cadRaster)?map.removeLayer(cadRaster):map.addLayer(cadRaster));
 
-/* ---------- Préchargement silencieux de la capture ---------- */
-// Objectif : préparer leaflet-image et le cache des tuiles dès l'ouverture
-map.whenReady(()=>{
-  setTimeout(()=>{
-    leafletImage(map,()=>{
-      console.log('✅ Préchargement terminé (moteur de capture prêt)');
-    });
-  },1000);
-});
+/* ---------- Indicateur de zoom ---------- */
+const zoomIndicator=L.control({position:'bottomleft'});
+zoomIndicator.onAdd=function(){const div=L.DomUtil.create('div','zoom-indicator');div.innerHTML='🔎 Zoom: '+map.getZoom();return div;};
+zoomIndicator.addTo(map);
+map.on('zoomend',()=>{const z=map.getZoom();document.querySelector('.zoom-indicator').innerHTML=`🔎 Zoom: <b>${z}</b> / ${frozen?22:MAX_NET_ZOOM}`;if(!frozen&&z>MAX_NET_ZOOM){map.setZoom(MAX_NET_ZOOM);toast('🚫 Zoom max atteint');}});
 </script>
-
 </body>
 </html>
