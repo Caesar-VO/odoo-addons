@@ -113,14 +113,22 @@ html,body{height:100%;margin:0;background:#000;}
   padding:4px 8px; border-radius:8px;
   font:13px system-ui; margin:8px;
 }
-.area-label {
+.area-label, .length-label {
   background:rgba(0,0,0,0.45);
   color:#fff; padding:4px 8px;
   border-radius:8px; font:14px system-ui;
   white-space:nowrap; cursor:pointer;
   transition:background .3s;
 }
-.area-label:hover { background:rgba(0,150,0,0.5); }
+.area-label:hover, .length-label:hover { background:rgba(0,150,0,0.5); }
+
+/* Style visuel de la “Haie” (polyligne fine en pointillés) */
+.haies-line{
+  stroke:#00C853 !important;
+  stroke-width:2 !important;
+  stroke-opacity:0.95 !important;
+  stroke-dasharray:6 3 !important;
+}
 
 .leaflet-frozen {filter:grayscale(0.2) brightness(0.95);transition:filter .3s;}
 .leaflet-control-zoom {margin-top:80px!important;}
@@ -163,6 +171,7 @@ html,body{height:100%;margin:0;background:#000;}
   <input class="search-input" id="searchInput" type="text" placeholder="Rechercher une adresse...">
   <div class="locate-btn" id="locateBtn">📍</div>
 </div>
+  
 <div class="suggestions" id="suggestions" style="display:none;"></div>
 
 <!-- Toolbar -->
@@ -170,7 +179,31 @@ html,body{height:100%;margin:0;background:#000;}
   <button class="btn" id="btnFreeze">📷 Freeze</button>
   <button class="btn" id="btnUnfreeze" hidden>↩️ Unfreeze</button>
   <button class="btn" id="btnRaster">Raster on/off</button>
+  <button class="btn" id="btnHelp">❓ Help</button>
+
 </div>
+ <!-- Fenêtre d’aide -->
+<div class="help-modal" id="helpModal" style="display:none;">
+  <div class="help-content" style="
+    background:#fff; color:#111; padding:20px; border-radius:12px;
+    max-width:360px; font:14px system-ui; box-shadow:0 8px 30px rgba(0,0,0,0.4);
+    position:relative;top: 80px;left:1125px;">
+    <div id="helpClose" style="
+      position:absolute; top:6px; right:6px; cursor:pointer;
+      font-size:18px; color:#666;">✖</div>
+    <h3 style="margin-top:0;color:#1E88E5;">ℹ️ Aide rapide</h3>
+    <p><b> ▱ Polygone :</b> dessinez une zone pour mesurer la surface (m²).<br>
+       <b>📏 ligne :</b> tracez une ligne pour mesurer la longueur (m / km).<br>
+       <b>🖱️ Copie :</b> cliquez sur les étiquettes pour copier la valeur.<br>
+       <b>🔍 Recherche :</b> trouvez une adresse en haut à gauche.<br>
+       <b>📍 Localisation :</b> centrez-vous sur votre position.<br>
+       <b>📷 Freeze :</b> capture la carte actuelle.<br>
+       <b>↩️ Unfreeze :</b> revient à la vue interactive.<br>
+       <b>🗺️ Raster :</b> affiche ou masque le cadastre.</p>
+    <p style="text-align:center;color:#888;margin-top:12px;">© Carte cadastrale personnalisée</p>
+  </div>
+</div>
+
 
 <script>
 /* ---------- Fonds IGN ---------- */
@@ -303,10 +336,16 @@ locateBtn.addEventListener('click',()=>{
 const drawnItems=new L.FeatureGroup().addTo(map);
 map.addControl(new L.Control.Draw({
   position:'topleft',
-  draw:{polygon:{shapeOptions:{color:'#1E88E5',weight:2,fillOpacity:.25}},
-        polyline:false,rectangle:false,circle:false,circlemarker:false,marker:false},
+  draw:{
+    polygon:{shapeOptions:{color:'#1E88E5',weight:2,fillOpacity:.25}},
+    /* ✅ Ajout : outil “Haie” (polyligne) */
+    polyline:{shapeOptions:{color:'#00C853',weight:2,opacity:0.95,dashArray:'6 3',className:'haies-line'}},
+    rectangle:false,circle:false,circlemarker:false,marker:false
+  },
   edit:{featureGroup:drawnItems,edit:true,remove:true}
 }));
+
+/* ---- Polygone (surface m²) ---- */
 let poly=null,label=null;
 function toGJ(l){const r=l.getLatLngs()[0].map(p=>[p.lng,p.lat]);r.push(r[0]);
   return{type:"Feature",geometry:{type:"Polygon",coordinates:[r]}};}
@@ -328,11 +367,70 @@ function updateLabel(){
     label.on('touchend',()=>copyToClipboard(`${val} m²`));
   }
 }
-map.on(L.Draw.Event.CREATED,e=>{drawnItems.clearLayers();
-  if(label){map.removeLayer(label);label=null;}
-  poly=e.layer; drawnItems.addLayer(poly); poly.on('edit',updateLabel); updateLabel();});
-map.on('draw:edited',()=>poly&&updateLabel());
-map.on('draw:deleted',()=>{poly=null;if(label){map.removeLayer(label);label=null;}});
+
+/* ---- Haie (longueur m / km) ---- */
+let hedge=null, lengthLabel=null;
+function toGJLine(l){return {type:'Feature',geometry:{type:'LineString',coordinates:l.getLatLngs().map(p=>[p.lng,p.lat])}};}
+function fmtLen(m){return m>=1000 ? (m/1000).toFixed(2)+' km' : Math.round(m)+' m';}
+function updateLengthLabel(){
+  if(!hedge) return;
+  const gj=toGJLine(hedge);
+  const lenM = turf.length(gj,{units:'kilometers'})*1000;
+  const pretty=fmtLen(lenM);
+
+  // position du label : milieu de la ligne
+  const halfKM=turf.length(gj,{units:'kilometers'})/2;
+  const mid=turf.along(gj,halfKM,{units:'kilometers'}).geometry.coordinates;
+  const latlng=[mid[1],mid[0]];
+  const html=`<div class="length-label" title="Cliquer pour copier">${pretty}</div>`;
+
+  if(!lengthLabel){
+    lengthLabel=L.marker(latlng,{icon:L.divIcon({className:'',html,iconSize:null})}).addTo(map);
+    lengthLabel.on('click',()=>copyToClipboard(pretty));
+    lengthLabel.on('touchend',()=>copyToClipboard(pretty));
+  }else{
+    lengthLabel.setLatLng(latlng);
+    lengthLabel.setIcon(L.divIcon({className:'',html,iconSize:null}));
+    lengthLabel.off('click'); lengthLabel.off('touchend');
+    lengthLabel.on('click',()=>copyToClipboard(pretty));
+    lengthLabel.on('touchend',()=>copyToClipboard(pretty));
+  }
+}
+
+/* ---- Création / édition / suppression ---- */
+map.on(L.Draw.Event.CREATED,e=>{
+  // IMPORTANT : on préserve ton comportement d’origine pour le polygone
+  if(e.layerType==='polygon'){
+    drawnItems.clearLayers();                 // (comportement original)
+    if(label){map.removeLayer(label);label=null;}
+    poly=e.layer; drawnItems.addLayer(poly);
+    poly.on('edit',updateLabel); updateLabel();
+  }
+  // Ajout : gestion de la haie (sans toucher au polygone)
+  if(e.layerType==='polyline'){
+    // On n’efface pas le polygone existant.
+    if(hedge){ drawnItems.removeLayer(hedge); } // une seule haie à la fois (sobre)
+    if(lengthLabel){ map.removeLayer(lengthLabel); lengthLabel=null; }
+    hedge=e.layer; drawnItems.addLayer(hedge);
+    hedge.on('edit',updateLengthLabel); updateLengthLabel();
+  }
+});
+
+map.on('draw:edited',()=>{
+  if(poly) updateLabel();
+  if(hedge) updateLengthLabel();
+});
+
+map.on('draw:deleted',e=>{
+  e.layers.eachLayer(l=>{
+    if(poly && l._leaflet_id===poly._leaflet_id){
+      poly=null; if(label){map.removeLayer(label);label=null;}
+    }
+    if(hedge && l._leaflet_id===hedge._leaflet_id){
+      hedge=null; if(lengthLabel){map.removeLayer(lengthLabel);lengthLabel=null;}
+    }
+  });
+});
 
 /* ---------- Mode Freeze + Loader ---------- */
 let frozen=false,frozenOverlay=null,savedLayers=[],savedZoomMax=null;
@@ -376,6 +474,24 @@ const zoomIndicator=L.control({position:'bottomleft'});
 zoomIndicator.onAdd=function(){const div=L.DomUtil.create('div','zoom-indicator');div.innerHTML='🔎 Zoom: '+map.getZoom();return div;};
 zoomIndicator.addTo(map);
 map.on('zoomend',()=>{const z=map.getZoom();document.querySelector('.zoom-indicator').innerHTML=`🔎 Zoom: <b>${z}</b> / ${frozen?22:MAX_NET_ZOOM}`;if(!frozen&&z>MAX_NET_ZOOM){map.setZoom(MAX_NET_ZOOM);toast('🚫 Zoom max atteint');}});
+ /* ---------- Bouton Help ---------- */
+const btnHelp = document.getElementById('btnHelp');
+const helpModal = document.getElementById('helpModal');
+const helpClose = document.getElementById('helpClose');
+
+btnHelp.addEventListener('click', ()=>{
+  helpModal.style.display='flex';
+});
+
+helpClose.addEventListener('click', ()=>{
+  helpModal.style.display='none';
+});
+
+helpModal.addEventListener('click', e=>{
+  if(e.target===helpModal) helpModal.style.display='none';
+});
+
 </script>
 </body>
 </html>
+
